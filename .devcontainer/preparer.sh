@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+command -v python3 > /dev/null || (sudo apt-get update && sudo apt-get install -y python3)
 # Télécharge les dépendances Maven à la création du Codespace : le premier lancement en séance est immédiat.
 for pom in lab-bff/banque-api/pom.xml lab-bff/bff-mobile/pom.xml lab-data/api-donnees/pom.xml lab-securite/banque-api/pom.xml; do
   [ -f "$pom" ] && mvn -q -B -f "$pom" dependency:go-offline || true
