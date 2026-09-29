@@ -1,0 +1,38 @@
+name: Lab Data
+
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  api-et-extraction:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Tests de l'API
+        working-directory: lab-data/api-donnees
+        run: mvn -B verify
+      - name: Lancer l'API puis l'extraction complète
+        run: |
+          java -jar lab-data/api-donnees/target/api-donnees-1.0.0.jar > api.log 2>&1 &
+          for i in $(seq 1 60); do curl -s localhost:8090/v3/api-docs > /dev/null && break; sleep 2; done
+          cd lab-data/extraction
+          curl -s -X POST "localhost:8090/dev/reglages?requetesParFenetre=5&fenetreSecondes=5" > /dev/null
+          python3 extraire.py --taille 5 --operations
+          test "$(($(wc -l < sortie/clients.csv) - 1))" -eq 57
+          test "$(($(wc -l < sortie/comptes.csv) - 1))" -eq 114
+          test "$(($(wc -l < sortie/operations.csv) - 1))" -eq 342
+          python3 extraire.py --depuis 2026-09-20T00:00:00Z
+          test "$(($(wc -l < sortie/clients.csv) - 1))" -eq 8
+          echo "Extraction vérifiée : 57 clients, 114 comptes, 342 opérations, 8 en incrémental"
+      - name: Logs en cas d'échec
+        if: failure()
+        run: tail -n 80 api.log

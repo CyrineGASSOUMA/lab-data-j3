@@ -1,0 +1,107 @@
+@api = http://localhost:8090
+@cle = cle-demo-etl-2026
+
+###############################################################
+# BLOC 1 — Premiers appels avec la clé d'API
+###############################################################
+
+### 1.1 Sans authentification : 401
+GET {{api}}/v1/clients
+
+### 1.2 Avec la clé d'API : première page (regardez les headers et le JSON)
+GET {{api}}/v1/clients
+X-API-Key: {{cle}}
+
+### 1.3 Un client
+GET {{api}}/v1/clients/4
+X-API-Key: {{cle}}
+
+### 1.4 Client inexistant : 404 au format Problem Details
+GET {{api}}/v1/clients/999
+X-API-Key: {{cle}}
+
+###############################################################
+# BLOC 2 — OAuth2 client credentials
+###############################################################
+
+### 2.1 Token du connecteur ETL (Basic = client_id:client_secret encodé en base64)
+# @name etl
+POST {{api}}/oauth2/token
+Authorization: Basic connecteur-etl:secret-etl-2026
+Content-Type: application/x-www-form-urlencoded
+
+grant_type=client_credentials
+
+@tokenEtl = {{etl.response.body.access_token}}
+
+### 2.2 Appel avec le token
+GET {{api}}/v1/clients
+Authorization: Bearer {{tokenEtl}}
+
+### 2.3 Mauvais secret : 401 invalid_client (format OAuth2)
+POST {{api}}/oauth2/token
+Authorization: Basic connecteur-etl:mauvais-secret
+Content-Type: application/x-www-form-urlencoded
+
+grant_type=client_credentials
+
+### 2.4 Token du rapport BI (scope clients:lire seulement)
+# @name bi
+POST {{api}}/oauth2/token
+Authorization: Basic rapport-bi:secret-bi-2026
+Content-Type: application/x-www-form-urlencoded
+
+grant_type=client_credentials
+
+@tokenBi = {{bi.response.body.access_token}}
+
+### 2.5 Le rapport BI lit les clients : 200
+GET {{api}}/v1/clients
+Authorization: Bearer {{tokenBi}}
+
+### 2.6 Le rapport BI lit les opérations : 403 (scope manquant)
+GET {{api}}/v1/operations
+Authorization: Bearer {{tokenBi}}
+
+### 2.7 Tokens de 20 secondes (démonstration de l'expiration)
+POST {{api}}/dev/reglages?dureeTokenSecondes=20
+
+### 2.8 Après 2.1 puis 20 s d'attente, rejouez 2.2 : 401 → il faut redemander un token
+
+###############################################################
+# BLOC 3 — Extraire comme un connecteur
+###############################################################
+
+### 3.1 Pagination : page suivante (valeur de liens.suivant)
+GET {{api}}/v1/clients?page=1&taille=20
+X-API-Key: {{cle}}
+
+### 3.2 Dernière page : liens.suivant vaut null
+GET {{api}}/v1/clients?page=2&taille=20
+X-API-Key: {{cle}}
+
+### 3.3 Extraction incrémentale : modifiés depuis le 20 septembre
+GET {{api}}/v1/clients?modifieDepuis=2026-09-20T00:00:00Z
+X-API-Key: {{cle}}
+
+### 3.4 Date au mauvais format : 400
+GET {{api}}/v1/clients?modifieDepuis=20/09/2026
+X-API-Key: {{cle}}
+
+### 3.5 Pagination par curseur : premier appel
+GET {{api}}/v1/operations?limite=100
+X-API-Key: {{cle}}
+
+### 3.6 Page suivante : collez la valeur de curseurSuivant
+GET {{api}}/v1/operations?limite=100&curseur=MTAw
+X-API-Key: {{cle}}
+
+### 3.7 Limite de débit : 3 requêtes par fenêtre de 20 s
+POST {{api}}/dev/reglages?requetesParFenetre=3&fenetreSecondes=20
+
+### 3.8 Envoyez cette requête 4 fois : la 4e répond 429 + Retry-After
+GET {{api}}/v1/clients?taille=5
+X-API-Key: {{cle}}
+
+### 3.9 Revenir aux réglages par défaut
+DELETE {{api}}/dev/reglages
